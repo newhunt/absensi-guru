@@ -17,13 +17,15 @@
     .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #2c3e50; }
     .form-group input, .form-group select { width: 100%; padding: 12px; border: 1px solid #bdc3c7; border-radius: 8px; font-size: 16px; transition: all 0.3s; }
     .form-group input:focus, .form-group select:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1); }
+    .checkbox-group { display: flex; align-items: center; gap: 10px; margin: 15px 0; }
+    .checkbox-group input { width: auto; margin: 0; }
     .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; margin: 5px; transition: all 0.3s; }
     .btn-primary { background: #3498db; color: white; }
     .btn-success { background: #2ecc71; color: white; }
     .btn-danger { background: #e74c3c; color: white; }
     .btn-warning { background: #f39c12; color: white; }
     .btn:disabled { background: #bdc3c7; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
-    .user-info { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: white; border-bottom: 2px solid #e74c3c; }
+    .user-info { display: flex; justify-content: space-between; align-items: center; padding: 20px; background: white; border-bottom: 2px solid #e74c3c; flex-wrap: wrap; gap: 10px; }
     .tab { overflow: hidden; background: #ecf0f1; border-bottom: 2px solid #e74c3c; display: flex; flex-wrap: wrap; }
     .tab button { background-color: inherit; border: none; outline: none; cursor: pointer; padding: 14px 20px; transition: 0.3s; font-size: 16px; font-weight: 500; flex: 1; color: #2c3e50; }
     .tab button.active { background-color: white; border-bottom: 3px solid #e74c3c; color: #e74c3c; }
@@ -49,6 +51,7 @@
     .button-group { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
     @media (max-width: 768px) { body { padding: 10px; } .card { margin: 10px; padding: 15px; } .tab button { padding: 10px; font-size: 12px; } }
     .coord-info { font-family: monospace; font-size: 12px; background: #f5f5f5; padding: 8px; border-radius: 5px; margin-top: 5px; }
+    .remember-me { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
   </style>
 </head>
 <body>
@@ -68,6 +71,10 @@
         <div class="form-group">
           <label>🔒 Password:</label>
           <input type="password" id="password" required placeholder="Masukkan Password">
+        </div>
+        <div class="remember-me">
+          <input type="checkbox" id="rememberMe">
+          <label for="rememberMe">🔁 Ingat Saya (tetap login meskipun refresh)</label>
         </div>
         <button type="submit" id="btnLogin" class="btn btn-primary" style="width: 100%;">Login</button>
       </form>
@@ -109,7 +116,10 @@
     <div id="mainApp" style="display:none;">
       <div class="user-info">
         <h3 id="userName"></h3>
-        <button onclick="logout()" class="btn btn-danger">🚪 Logout</button>
+        <div>
+          <span id="sessionStatus" style="font-size:12px; margin-right:10px; color:green;">✅ Session aktif</span>
+          <button onclick="logout()" class="btn btn-danger">🚪 Logout</button>
+        </div>
       </div>
       
       <div class="tab">
@@ -165,7 +175,7 @@
                <thead><tr><th>Tanggal</th><th>Jam Masuk</th><th>Jam Pulang</th><th>Status</th></tr></thead>
                <tbody id="rekapBody"><tr><td colspan="4">Loading...</td></tr>
               </tbody>
-             </table>
+            </table>
           </div>
           <div id="pagination" class="pagination"></div>
         </div>
@@ -228,7 +238,7 @@
   </div>
 
   <script>
-    const webAppUrl = "https://script.google.com/macros/s/AKfycbx5Z_avBP6m-5Jsw8C3R1Pa-hydJOtMQbsl6uknxc9pg1_Tg50o7J3sYKYrB3_KKdlWaQ/exec";
+    const webAppUrl = "https://script.google.com/macros/s/AKfycbySvXQcBN2M9rzreYaUKn6IvRZerIhQUIzMrlgWT8lMNgkfxc-41THn6IMZ0Q2hDvzeqA/exec";
     
     // --- KONFIGURASI DEFAULT (sementara, akan diupdate dari database) ---
     let SEKOLAH_LAT = -7.0051;
@@ -243,6 +253,83 @@
     let currentPage = 1;
     const rowsPerPage = 10;
 
+    // ============ PERSISTENT LOGIN ============
+    function saveSession(userData, remember = false) {
+      if (remember) {
+        localStorage.setItem('absensi_session', JSON.stringify({
+          user: userData,
+          timestamp: new Date().getTime(),
+          remember: true
+        }));
+      } else {
+        sessionStorage.setItem('absensi_session', JSON.stringify({
+          user: userData,
+          timestamp: new Date().getTime(),
+          remember: false
+        }));
+      }
+    }
+
+    function getSession() {
+      // Cek sessionStorage dulu (lebih prioritas)
+      let session = sessionStorage.getItem('absensi_session');
+      if (session) {
+        return JSON.parse(session).user;
+      }
+      // Cek localStorage
+      session = localStorage.getItem('absensi_session');
+      if (session) {
+        const data = JSON.parse(session);
+        // Cek apakah session masih valid (maksimal 7 hari)
+        const now = new Date().getTime();
+        const sevenDays = 7 * 24 * 60 * 60 * 1000;
+        if (now - data.timestamp < sevenDays) {
+          return data.user;
+        } else {
+          clearSession();
+        }
+      }
+      return null;
+    }
+
+    function clearSession() {
+      localStorage.removeItem('absensi_session');
+      sessionStorage.removeItem('absensi_session');
+    }
+
+    // ============ AUTO LOGIN ============
+    async function checkAutoLogin() {
+      const savedUser = getSession();
+      if (savedUser && savedUser.nik) {
+        console.log("Auto login untuk:", savedUser.nik);
+        // Verifikasi ulang ke server
+        const result = await callGAS('authenticateGuru', { 
+          nik: savedUser.nik, 
+          password: savedUser.password || '' 
+        });
+        
+        if (result.success) {
+          currentUser = result;
+          document.getElementById('loginForm').style.display = 'none';
+          document.getElementById('mainApp').style.display = 'block';
+          document.getElementById('userName').innerHTML = '👋 ' + result.nama + (result.nik === 'admin' ? ' <span class="admin-badge">Admin</span>' : '');
+          if(result.nik === 'admin') {
+            document.getElementById('tabAdmin').style.display = 'block';
+            document.getElementById('tabSettings').style.display = 'block';
+          }
+          await loadPengaturanGlobal();
+          cekStatusAbsensi();
+          loadProfile();
+          await tampilkanRekap();
+          return true;
+        } else {
+          clearSession();
+          return false;
+        }
+      }
+      return false;
+    }
+
     // ============ FUNGSI PENGATURAN GLOBAL ============
     async function loadPengaturanGlobal() {
       try {
@@ -252,18 +339,22 @@
           SEKOLAH_LNG = result.settings.lng;
           RADIUS_MAKSIMAL = result.settings.radius;
           
-          document.getElementById('setting_lat').value = SEKOLAH_LAT;
-          document.getElementById('setting_lng').value = SEKOLAH_LNG;
-          document.getElementById('setting_radius').value = RADIUS_MAKSIMAL;
+          const settingLat = document.getElementById('setting_lat');
+          const settingLng = document.getElementById('setting_lng');
+          const settingRadius = document.getElementById('setting_radius');
+          const settingsInfo = document.getElementById('currentSettingsInfo');
           
-          document.getElementById('currentSettingsInfo').innerHTML = `
-            📍 Pengaturan Database (Berlaku untuk SEMUA pengguna):<br>
-            Latitude: ${SEKOLAH_LAT}<br>
-            Longitude: ${SEKOLAH_LNG}<br>
-            Radius: ${RADIUS_MAKSIMAL} meter
-          `;
-        } else {
-          console.error('Gagal load pengaturan:', result);
+          if (settingLat) settingLat.value = SEKOLAH_LAT;
+          if (settingLng) settingLng.value = SEKOLAH_LNG;
+          if (settingRadius) settingRadius.value = RADIUS_MAKSIMAL;
+          if (settingsInfo) {
+            settingsInfo.innerHTML = `
+              📍 Pengaturan Database (Berlaku untuk SEMUA pengguna):<br>
+              Latitude: ${SEKOLAH_LAT}<br>
+              Longitude: ${SEKOLAH_LNG}<br>
+              Radius: ${RADIUS_MAKSIMAL} meter
+            `;
+          }
         }
       } catch(e) {
         console.error(e);
@@ -272,6 +363,7 @@
 
     function ambilLokasiSekarang() {
       const div = document.getElementById('currentLocationDisplay');
+      if (!div) return;
       div.innerHTML = "📍 Mengambil lokasi...";
       navigator.geolocation.getCurrentPosition(pos => {
         const lat = pos.coords.latitude;
@@ -317,7 +409,6 @@
       
       alert(result.message);
       if(result.success) {
-        // Reload pengaturan dari database
         await loadPengaturanGlobal();
       }
       
@@ -397,15 +488,22 @@
       const btn = document.getElementById('btnLogin');
       const nik = document.getElementById('nik').value;
       const password = document.getElementById('password').value;
+      const rememberMe = document.getElementById('rememberMe').checked;
+      
       if(!nik || !password) return alert("Isi data!");
       btn.disabled = true; btn.innerHTML = '<span class="loading"></span> Verifikasi...';
       
-      // Load pengaturan global dulu
       await loadPengaturanGlobal();
       
       const result = await callGAS('authenticateGuru', { nik, password });
       if(result.success) {
         currentUser = result;
+        // Simpan password untuk auto-login (hanya jika remember me)
+        if (rememberMe) {
+          currentUser.password = password;
+        }
+        saveSession(currentUser, rememberMe);
+        
         document.getElementById('loginForm').style.display = 'none';
         document.getElementById('mainApp').style.display = 'block';
         document.getElementById('userName').innerHTML = '👋 ' + result.nama + (result.nik === 'admin' ? ' <span class="admin-badge">Admin</span>' : '');
@@ -420,9 +518,16 @@
       btn.disabled = false; btn.innerHTML = 'Login';
     }
 
+    // ============ FUNGSI LOGOUT ============
+    function logout() {
+      clearSession();
+      location.reload();
+    }
+
     // ============ FUNGSI ABSENSI ============
     function ambilLokasi(tipe) {
       const div = document.getElementById(`lokasi${tipe.charAt(0).toUpperCase()+tipe.slice(1)}`);
+      if (!div) return;
       div.innerHTML = "📍 Memvalidasi posisi Anda...";
       
       navigator.geolocation.getCurrentPosition(pos => {
@@ -447,6 +552,7 @@
 
     function ambilSelfie(tipe) {
       const preview = document.getElementById(`selfiePreview${tipe.charAt(0).toUpperCase()+tipe.slice(1)}`);
+      if (!preview) return;
       navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }).then(stream => {
         const video = document.createElement('video');
         video.srcObject = stream; video.play(); video.className = 'video-preview';
@@ -488,15 +594,20 @@
         currentPage = 1;
         filterRekap();
       } else {
-        document.getElementById('rekapBody').innerHTML = `<tr><td colspan="4">Gagal memuat data: ${result.message}</td></tr>`;
+        const rekapBody = document.getElementById('rekapBody');
+        if (rekapBody) {
+          rekapBody.innerHTML = `<tr><td colspan="4">Gagal memuat data: ${result.message}</td></tr>`;
+        }
       }
     }
 
     function filterRekap() {
-      const search = document.getElementById('searchRekap').value.toLowerCase();
+      const search = document.getElementById('searchRekap');
+      if (!search) return;
+      const searchValue = search.value.toLowerCase();
       const filtered = fullRekapData.filter(row => 
-        row.tanggal.toLowerCase().includes(search) || 
-        (row.status && row.status.toLowerCase().includes(search))
+        row.tanggal.toLowerCase().includes(searchValue) || 
+        (row.status && row.status.toLowerCase().includes(searchValue))
       );
       renderTable(filtered);
     }
@@ -507,8 +618,10 @@
       const pageData = data.slice(start, end);
       
       const tbody = document.getElementById('rekapBody');
+      if (!tbody) return;
+      
       if(pageData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4">Tidak ada data</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="4">Tidak ada数据</td></tr>`;
       } else {
         tbody.innerHTML = pageData.map(row => `
           <tr>
@@ -522,6 +635,7 @@
       
       const totalPages = Math.ceil(data.length / rowsPerPage);
       const pagination = document.getElementById('pagination');
+      if (!pagination) return;
       pagination.innerHTML = '';
       for(let i = 1; i <= totalPages; i++) {
         const btn = document.createElement('button');
@@ -540,10 +654,10 @@
       const res = await callGAS('getAdminDashboard', {});
       const body = document.getElementById('adminTableBody');
       const stats = document.getElementById('adminStats');
-      if(res.success) {
+      if(res.success && body && stats) {
         stats.innerHTML = `<div class="success-box">🟢 Total Record: ${res.data.length} | Hari Ini: ${res.todayCount} Guru Hadir</div>`;
         if(res.data.length === 0) {
-          body.innerHTML = '<td><td colspan="5">Belum ada data absensi</td></tr>';
+          body.innerHTML = '<tr><td colspan="5">Belum ada data absensi</td></tr>';
         } else {
           body.innerHTML = res.data.map(row => `
             <tr>
@@ -555,20 +669,23 @@
             </tr>
           `).join('');
         }
-      } else {
+      } else if (stats) {
         stats.innerHTML = `<div class="error-box">Gagal memuat data: ${res.message}</div>`;
       }
     }
 
     // ============ FUNGSI PROFILE & PASSWORD ============
     function loadProfile() {
-      document.getElementById('profileInfo').innerHTML = `<div class="info-box">
-        <p><b>Nama:</b> ${currentUser.nama}</p>
-        <p><b>NIK:</b> ${currentUser.nik}</p>
-        <p><b>Email:</b> ${currentUser.email || '-'}</p>
-        <p><b>Telepon:</b> ${currentUser.telepon || '-'}</p>
-        <p><b>Status:</b> ${currentUser.status || 'Guru Aktif'}</p>
-      </div>`;
+      const profileInfo = document.getElementById('profileInfo');
+      if (profileInfo) {
+        profileInfo.innerHTML = `<div class="info-box">
+          <p><b>Nama:</b> ${currentUser.nama}</p>
+          <p><b>NIK:</b> ${currentUser.nik}</p>
+          <p><b>Email:</b> ${currentUser.email || '-'}</p>
+          <p><b>Telepon:</b> ${currentUser.telepon || '-'}</p>
+          <p><b>Status:</b> ${currentUser.status || 'Guru Aktif'}</p>
+        </div>`;
+      }
     }
 
     async function ubahPassword() {
@@ -586,6 +703,7 @@
       });
       alert(result.message);
       if(result.success && result.message.includes("Berhasil")) {
+        clearSession();
         setTimeout(() => logout(), 1500);
       }
     }
@@ -593,10 +711,12 @@
     // ============ FUNGSI CEK STATUS ============
     async function cekStatusAbsensi() {
       const result = await callGAS('cekAbsensiHariIni', { nik: currentUser.nik });
+      const statusDiv = document.getElementById('statusAbsensi');
+      if (!statusDiv) return;
       if(result.error) {
-        document.getElementById('statusAbsensi').innerHTML = `<div class="error-box">Gagal cek status</div>`;
+        statusDiv.innerHTML = `<div class="error-box">Gagal cek status</div>`;
       } else {
-        document.getElementById('statusAbsensi').innerHTML = `<div class="info-box">
+        statusDiv.innerHTML = `<div class="info-box">
           ✅ Absen Masuk: ${result.jamMasuk || 'Belum absen'}<br>
           🏠 Absen Pulang: ${result.jamPulang || 'Belum absen'}
         </div>`;
@@ -616,9 +736,26 @@
       if(tabName === 'Settings' && currentUser && currentUser.nik === 'admin') loadPengaturanGlobal();
     }
 
-    function logout() { location.reload(); }
-    function showRegister() { document.getElementById('loginForm').style.display='none'; document.getElementById('registerForm').style.display='block'; }
-    function showLogin() { document.getElementById('registerForm').style.display='none'; document.getElementById('loginForm').style.display='block'; }
+    function showRegister() { 
+      document.getElementById('loginForm').style.display='none'; 
+      document.getElementById('registerForm').style.display='block'; 
+    }
+    
+    function showLogin() { 
+      document.getElementById('registerForm').style.display='none'; 
+      document.getElementById('loginForm').style.display='block'; 
+    }
+
+    // ============ INIT ============
+    (async function init() {
+      await loadPengaturanGlobal();
+      const autoLogged = await checkAutoLogin();
+      if (!autoLogged) {
+        // Tampilkan form login
+        document.getElementById('loginForm').style.display = 'block';
+        document.getElementById('mainApp').style.display = 'none';
+      }
+    })();
   </script>
 </body>
 </html>
